@@ -1,7 +1,7 @@
 import requests
 import json
 
-with open("test.jpg", "rb") as f:
+with open("sample_images/normal.jpg", "rb") as f:
     response = requests.post(
         "http://localhost:8000/analyze",
         files={"file": f}

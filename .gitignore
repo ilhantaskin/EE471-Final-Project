@@ -32,6 +32,22 @@ data/
 dataset/
 datasets/
 
+# Backend dataset/test image dumps. Keep only backend/sample_images for demos.
+backend/fire_image*.jpg
+backend/flood_image*.jpg
+backend/collapsed_building_image*.jpg
+backend/normal_image*.jpg
+backend/01_*.png
+backend/03_*.png
+backend/04_*.png
+backend/05_*.png
+backend/06_*.png
+backend/deprem.jpg
+backend/fire.jpg
+backend/earthquake.jpg
+backend/maxresdefault.png.jpg
+backend/test.jpg
+
 # Runtime output
 backend/backend.log
 backend/backend.err.log
