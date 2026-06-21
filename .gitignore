@@ -1,0 +1,41 @@
+# Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Flutter/Dart generated files
+frontend/drone_app/.dart_tool/
+frontend/drone_app/build/
+frontend/build/
+frontend/drone_app/.flutter-plugins-dependencies
+
+# Local package/cache folders
+.pub-cache/
+.pub/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Local datasets
+aider/
+AIDER/
+data/
+dataset/
+datasets/
+
+# Runtime output
+backend/backend.log
+backend/backend.err.log
+frontend/drone_app/web-static.log
+frontend/drone_app/web-static.err.log
+frontend/drone_app/flutter-web.log
+frontend/drone_app/flutter-web.err.log
