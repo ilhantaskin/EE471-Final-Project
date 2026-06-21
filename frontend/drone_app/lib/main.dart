@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'dart:convert';
@@ -39,6 +40,7 @@ class DronePanel extends StatefulWidget {
 
 class _DronePanelState extends State<DronePanel> {
   final SpeechToText _speech = SpeechToText();
+  final ImagePicker _imagePicker = ImagePicker();
   final MapController _mapController = MapController();
   final Distance _distance = const Distance();
   String _command = '';
@@ -76,7 +78,7 @@ class _DronePanelState extends State<DronePanel> {
     'speed': 12,
   };
 
-  final String _backendUrl = 'http://localhost:8000';
+  final String _backendUrl = _resolveBackendUrl();
 
   static const Color milGreen = Color(0xFF4ADE80);
   static const Color milGreenDark = Color(0xFF166534);
@@ -87,6 +89,16 @@ class _DronePanelState extends State<DronePanel> {
   static const Color milRed = Color(0xFFEF4444);
   static const Color milAmber = Color(0xFFFACC15);
   static const Color milText = Color(0xFF4A7A4A);
+
+  static String _resolveBackendUrl() {
+    const configured = String.fromEnvironment('BACKEND_URL');
+    if (configured.isNotEmpty) return configured;
+    if (kIsWeb) return 'http://localhost:8000';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:8000';
+    }
+    return 'http://localhost:8000';
+  }
 
   @override
   void initState() {
@@ -603,15 +615,12 @@ class _DronePanelState extends State<DronePanel> {
   }
 
   Future<void> _pickImage() async {
-    FilePickerResult? result = await FilePicker.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    if (result != null && result.files.single.bytes != null) {
-      final bytes = result.files.single.bytes!;
+    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      final bytes = await image.readAsBytes();
       setState(() {
         _originalBase64 = base64Encode(bytes);
-        _fileName = result.files.single.name;
+        _fileName = image.name;
         _grayscaleBase64 = null;
         _edgesBase64 = null;
         _report = '';
@@ -756,20 +765,33 @@ class _DronePanelState extends State<DronePanel> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('◉ DISASTER DRONE SYSTEM', style: TextStyle(color: milGreen, fontSize: 13, letterSpacing: 3, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-                Text('UAV TACTICAL OPERATIONS // ACTIVE', style: TextStyle(color: milText, fontSize: 9, letterSpacing: 2, fontFamily: 'monospace')),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '> DISASTER DRONE SYSTEM',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: milGreen, fontSize: 12, letterSpacing: 2, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'UAV TACTICAL OPS // ACTIVE',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: milText, fontSize: 9, letterSpacing: 1, fontFamily: 'monospace'),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text('SYS: ${DateTime.now().hour.toString().padLeft(2,'0')}:${DateTime.now().minute.toString().padLeft(2,'0')}Z', style: TextStyle(color: milGreen, fontSize: 9, letterSpacing: 2, fontFamily: 'monospace')),
+                Text('SYS: ${DateTime.now().hour.toString().padLeft(2,'0')}:${DateTime.now().minute.toString().padLeft(2,'0')}Z', style: TextStyle(color: milGreen, fontSize: 9, letterSpacing: 1, fontFamily: 'monospace')),
                 Row(children: [
-                  AnimatedOpacity(opacity: _blink ? 1.0 : 0.0, duration: Duration.zero, child: Text('● ', style: TextStyle(color: milGreenMid, fontSize: 9))),
-                  Text('SIGNAL STRONG', style: TextStyle(color: milText, fontSize: 9, letterSpacing: 1, fontFamily: 'monospace')),
+                  AnimatedOpacity(opacity: _blink ? 1.0 : 0.0, duration: Duration.zero, child: Text('* ', style: TextStyle(color: milGreenMid, fontSize: 9))),
+                  Text('SIGNAL STRONG', style: TextStyle(color: milText, fontSize: 9, letterSpacing: 0, fontFamily: 'monospace')),
                 ]),
               ],
             ),
@@ -778,7 +800,6 @@ class _DronePanelState extends State<DronePanel> {
       ),
     );
   }
-
   Widget _buildTelemetry() {
     final items = [
       {'label': 'ALTITUDE', 'value': '${_telemetry['altitude']}m', 'color': milGreen},

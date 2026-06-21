@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Drone App</string>
+	<string>Disaster Drone</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>drone_app</string>
+	<string>Disaster Drone</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Drone imagery can be captured for disaster analysis.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Device location is used to anchor the disaster map and evacuation route.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voice commands are used to control mission analysis and reporting.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Drone imagery can be selected from the photo library for analysis.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
