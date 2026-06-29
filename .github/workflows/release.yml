@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'     # v1.0.0, v1.1.0, v2.0.0 gibi tag'lar tetikler
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Versiyonu tag'den oku
+        id: version
+        run: |
+          # Tag'i al: "v1.1.0" → "1.1.0"
+          TAG=${{ github.ref_name }}
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "🏷️ Tag: $TAG  →  Versiyon: $VERSION"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: frontend/drone_app
+        run: flutter pub get
+
+      - name: pubspec.yaml versiyonunu güncelle
+        working-directory: frontend/drone_app
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          BUILD=${{ github.run_number }}
+          NEW="$VERSION+$BUILD"
+          echo "📝 pubspec.yaml: version: $NEW"
+          sed -i "s/^version: .*/version: $NEW/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Analyze
+        working-directory: frontend/drone_app
+        run: flutter analyze --no-fatal-infos
+
+      - name: Build web
+        working-directory: frontend/drone_app
+        run: |
+          flutter build web \
+            --dart-define=BACKEND_URL=https://ilhan112-disaster-drone-api.hf.space \
+            --release
+
+      - name: Release özeti
+        run: |
+          echo "✅ Release tamamlandı!"
+          echo "🏷️  Versiyon : ${{ steps.version.outputs.version }}+${{ github.run_number }}"
+          echo "📦 Artifact : flutter-web-${{ github.ref_name }}"
+
+      - name: Build'i kaydet (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-${{ github.ref_name }}
+          path: frontend/drone_app/build/web/
+          retention-days: 30

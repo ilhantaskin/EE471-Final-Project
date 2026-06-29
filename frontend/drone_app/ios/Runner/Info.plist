@@ -32,6 +32,8 @@
 	<string>Device location is used to anchor the disaster map and evacuation route.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice commands are used to control mission analysis and reporting.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition is used to dictate voice commands to the drone panel.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Drone imagery can be selected from the photo library for analysis.</string>
 	<key>UIApplicationSceneManifest</key>

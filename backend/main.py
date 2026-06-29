@@ -1,18 +1,35 @@
+"""
+EE471 Disaster Drone Decision Support System
+Backend 1 — Local Orchestration Layer
+
+Mimari:
+    Flutter App
+        |
+        v
+    Backend 1 (bu dosya) — telemetry, ses komutu, mission report yönetir
+        |
+        v
+    Backend 2 (Cloud — Hugging Face) — ML + OpenCV + risk score yapar
+
+Backend 1 görevleri:
+  - /analyze: görüntüyü Backend 2'ye iletir, sonucu Flutter'a döndürür
+  - /report:  mission report üretir (sesli komut + telemetri + analiz birleşimi)
+  - /health:  iki backend'in sağlık durumunu raporlar
+  - /samples: Backend 2'den örnek görselleri proxy'ler
+"""
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import cv2
-import numpy as np
-import base64
+import httpx
 import os
 import json
-import torch
-import torchvision.transforms as transforms
-from torchvision import models
-from PIL import Image
-import io
 
-app = FastAPI()
+app = FastAPI(
+    title="EE471 Disaster Drone — Backend 1",
+    description="Local orchestration layer. Forwards image analysis to the cloud ML backend.",
+    version="1.0.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,151 +39,114 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ML Model yükle
-with open("disaster_classes.json") as f:
-    CLASSES = json.load(f)
+# Backend 2 (cloud) adresi — ortam değişkeniyle override edilebilir
+BACKEND2_URL = os.environ.get(
+    "BACKEND2_URL",
+    "https://ilhan112-disaster-drone-api.hf.space",
+)
 
-ml_model = models.mobilenet_v2()
-ml_model.classifier[1] = torch.nn.Linear(ml_model.last_channel, len(CLASSES))
-ml_model.load_state_dict(torch.load("disaster_model.pth", map_location="cpu"))
-ml_model.eval()
+# Backend 2'ye istek atarken kullanılacak timeout (saniye)
+CLOUD_TIMEOUT = 30.0
 
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
 
-LABEL_MAP = {
-    "collapsed_building": "Deprem",
-    "fire": "Yangin",
-    "flooded_areas": "Sel",
-    "normal": "Hasarsiz",
-    "traffic_incident": "Trafik",
-}
-
-SAMPLE_IMAGES = {
-    "normal": {"file": "sample_images/normal.jpg", "label": "Normal Area", "description": "No damage detected"},
-    "deprem": {"file": "sample_images/deprem.jpg", "label": "Earthquake Damage", "description": "Collapsed structures"},
-    "sehir": {"file": "sample_images/sehir.jpg", "label": "Urban Aerial", "description": "Dense urban area"},
-}
+# ──────────────────────────────────────────────────────────────────────────────
+# Root
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
-    return {"status": "ok"}
+    """Backend 1 sağlık kontrolü."""
+    return {"status": "ok", "layer": "backend1", "cloud_backend": BACKEND2_URL}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Health — her iki backend'in durumunu raporla
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    """Backend 1 ve Backend 2'nin anlık sağlık durumunu döndürür."""
+    b2_status = "unknown"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{BACKEND2_URL}/")
+            b2_status = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+    except Exception as exc:
+        b2_status = f"unreachable ({exc})"
+
+    return {
+        "backend1": "ok",
+        "backend2": b2_status,
+        "backend2_url": BACKEND2_URL,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Samples — Backend 2'den proxy
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/samples")
-def get_samples():
-    result = {}
-    for key, info in SAMPLE_IMAGES.items():
-        if os.path.exists(info["file"]):
-            with open(info["file"], "rb") as f:
-                data = base64.b64encode(f.read()).decode("utf-8")
-            result[key] = {
-                "label": info["label"],
-                "description": info["description"],
-                "base64": data
-            }
-    return result
+async def get_samples():
+    """
+    Backend 2'deki örnek görselleri Flutter'a proxy'ler.
+    Backend 2 erişilemezse boş dict döner (Flutter bunu tolere ediyor).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=CLOUD_TIMEOUT) as client:
+            r = await client.get(f"{BACKEND2_URL}/samples")
+            if r.status_code == 200:
+                return r.json()
+    except Exception:
+        pass
+    return {}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Analyze — görüntüyü Backend 2'ye ilet, sonucu döndür
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
-    contents = await file.read()
-    np_arr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    """
+    Flutter'dan gelen görüntüyü Backend 2 (Cloud ML) katmanına iletir.
+    Backend 2; OpenCV metrikleri, MobileNetV2 sınıflandırması ve risk skoru döndürür.
+    Backend 1 bu sonucu değiştirmeden Flutter'a iletir.
+    """
+    try:
+        contents = await file.read()
+        async with httpx.AsyncClient(timeout=CLOUD_TIMEOUT) as client:
+            response = await client.post(
+                f"{BACKEND2_URL}/analyze",
+                files={"file": (file.filename or "image.jpg", contents, "image/jpeg")},
+            )
+        if response.status_code == 200:
+            return response.json()
+        return JSONResponse(
+            status_code=response.status_code,
+            content={"error": f"Backend 2 returned {response.status_code}"},
+        )
+    except httpx.TimeoutException:
+        return JSONResponse(
+            status_code=504,
+            content={"error": "Backend 2 (cloud) timeout. Check Hugging Face Space status."},
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"error": f"Backend 2 unreachable: {exc}"},
+        )
 
-    if img is None:
-        return JSONResponse(status_code=400, content={"error": "Goruntu okunamadi"})
 
-    # OpenCV metrikleri
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 100, 200)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    edge_density = float(np.count_nonzero(edges) / edges.size)
-    brightness = float(gray.mean())
-    blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-    contrast = float(gray.std())
-
-    lower_fire1 = np.array([0, 170, 170])
-    upper_fire1 = np.array([18, 255, 255])
-    lower_fire2 = np.array([165, 170, 170])
-    upper_fire2 = np.array([180, 255, 255])
-    fire_mask = cv2.inRange(hsv, lower_fire1, upper_fire1) | cv2.inRange(hsv, lower_fire2, upper_fire2)
-    fire_ratio = float(np.count_nonzero(fire_mask) / fire_mask.size)
-
-    lower_blue = np.array([90, 40, 40])
-    upper_blue = np.array([130, 255, 255])
-    lower_mud = np.array([15, 50, 100])
-    upper_mud = np.array([25, 160, 210])
-    water_mask = cv2.inRange(hsv, lower_blue, upper_blue) | cv2.inRange(hsv, lower_mud, upper_mud)
-    water_ratio = float(np.count_nonzero(water_mask) / water_mask.size)
-
-    # ML model tahmini
-    pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    tensor = transform(pil_img).unsqueeze(0)
-    with torch.no_grad():
-        output = ml_model(tensor)
-        probs = torch.softmax(output, dim=1)[0]
-
-    disaster_probs = {}
-    for i, cls in enumerate(CLASSES):
-        label = LABEL_MAP.get(cls, cls)
-        disaster_probs[label] = round(probs[i].item() * 100, 1)
-
-    top_disaster = max(disaster_probs, key=disaster_probs.get)
-    top_prob = disaster_probs[top_disaster]
-
-    # Risk skoru - ML tabanlı + OpenCV destekli
-    if top_disaster == "Yangin":
-        base_risk = top_prob * 0.9
-        extra = min(fire_ratio * 200, 10)
-        risk_score = int(min(base_risk + extra, 100))
-
-    elif top_disaster == "Sel":
-        base_risk = top_prob * 0.8
-        extra = min(water_ratio * 150, 10)
-        risk_score = int(min(base_risk + extra, 100))
-
-    elif top_disaster == "Deprem":
-        base_risk = top_prob * 0.85
-        edge_extra = min(edge_density * 50, 10)
-        risk_score = int(min(base_risk + edge_extra, 100))
-
-    elif top_disaster == "Trafik":
-        risk_score = int(top_prob * 0.6)
-
-    else:  # Hasarsiz
-        risk_score = int(max(5, top_prob * 0.1))
-
-    risk_score = max(0, min(risk_score, 100))
-
-    def to_base64(image):
-        _, buffer = cv2.imencode(".jpg", image)
-        return base64.b64encode(buffer).decode("utf-8")
-
-    edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-
-    return {
-        "risk_score": risk_score,
-        "disaster_probs": disaster_probs,
-        "metrics": {
-            "edge_density": round(edge_density, 4),
-            "brightness": round(brightness, 2),
-            "blur_score": round(blur_score, 2),
-            "fire_ratio": round(fire_ratio, 4),
-            "water_ratio": round(water_ratio, 4),
-            "contrast": round(contrast, 2),
-        },
-        "images": {
-            "original": to_base64(img),
-            "grayscale": to_base64(gray),
-            "edges": to_base64(edges_colored)
-        }
-    }
+# ──────────────────────────────────────────────────────────────────────────────
+# Report — mission report üret (Backend 1'de işlenir)
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.post("/report")
 async def generate_report(request: dict):
+    """
+    Sesli komut, telemetri ve analiz sonuçlarını birleştirerek mission report üretir.
+    Bu endpoint Backend 1'de çalışır; Backend 2'ye bağımlılığı yoktur.
+    """
     stt_text = request.get("command", "")
     telemetry = request.get("telemetry", {})
     analysis = request.get("analysis", {})
@@ -187,7 +167,7 @@ async def generate_report(request: dict):
         level = "LOW"
         action = "Area appears stable. Continue monitoring."
 
-    # Komuta özel aksiyon
+    # Sesli komuta özel aksiyon ekle
     cmd_lower = stt_text.lower()
     if "survivor" in cmd_lower or "rescue" in cmd_lower:
         action += " Focus on survivor detection and extraction."

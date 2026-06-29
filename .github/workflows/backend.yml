@@ -1,0 +1,58 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+
+jobs:
+  test:
+    name: Backend Python Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check backend imports
+        working-directory: backend
+        run: |
+          python -c "
+          import fastapi
+          import httpx
+          import uvicorn
+          print('All imports OK')
+          "
+
+      - name: Smoke test — FastAPI startup
+        working-directory: backend
+        run: |
+          uvicorn main:app --host 0.0.0.0 --port 8000 &
+          SERVER_PID=$!
+          sleep 5
+          RESPONSE=$(curl -sf http://localhost:8000/ || echo "FAIL")
+          echo "Response: $RESPONSE"
+          kill $SERVER_PID 2>/dev/null || true
+          if echo "$RESPONSE" | grep -q '"ok"'; then
+            echo "Smoke test PASSED"
+          else
+            echo "Smoke test FAILED"
+            exit 1
+          fi

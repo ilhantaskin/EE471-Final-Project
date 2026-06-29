@@ -1,0 +1,68 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/flutter.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+
+jobs:
+  build:
+    name: Flutter Web Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: frontend/drone_app
+        run: flutter pub get
+
+      - name: Bump build number
+        working-directory: frontend/drone_app
+        run: |
+          # Mevcut versiyonu oku (örn: 1.0.0+1)
+          CURRENT=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          BASE=$(echo $CURRENT | cut -d'+' -f1)       # 1.0.0
+          # GitHub Actions run numarasını build numarası olarak kullan
+          NEW_VERSION="${BASE}+${{ github.run_number }}"
+          echo "Versiyon: $CURRENT → $NEW_VERSION"
+          # pubspec.yaml'ı güncelle
+          sed -i "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
+
+      - name: Analyze code
+        working-directory: frontend/drone_app
+        run: flutter analyze --no-fatal-infos
+
+      - name: Build web
+        working-directory: frontend/drone_app
+        run: |
+          flutter build web \
+            --dart-define=BACKEND_URL=https://ilhan112-disaster-drone-api.hf.space \
+            --release
+
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-build-v1.0.0+${{ github.run_number }}
+          path: frontend/drone_app/build/web/
+          retention-days: 7
+
+      - name: Print version info
+        run: |
+          echo "✅ Build tamamlandı!"
+          echo "📦 Versiyon: 1.0.0+${{ github.run_number }}"
+          echo "🔗 Artifact: flutter-web-build-v1.0.0+${{ github.run_number }}"
