@@ -41,18 +41,8 @@ jobs:
           print('All imports OK')
           "
 
-      - name: Smoke test — FastAPI startup
+      - name: Run Python unit tests
         working-directory: backend
         run: |
-          uvicorn main:app --host 0.0.0.0 --port 8000 &
-          SERVER_PID=$!
-          sleep 5
-          RESPONSE=$(curl -sf http://localhost:8000/ || echo "FAIL")
-          echo "Response: $RESPONSE"
-          kill $SERVER_PID 2>/dev/null || true
-          if echo "$RESPONSE" | grep -q '"ok"'; then
-            echo "Smoke test PASSED"
-          else
-            echo "Smoke test FAILED"
-            exit 1
-          fi
+          python -m unittest test_main.py
+
